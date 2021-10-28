@@ -15,4 +15,5 @@ mkfs
 kernel/kernel
 user/usys.S
 .gdbinit
+.gdbinit.tmpl-riscv
 todolist
