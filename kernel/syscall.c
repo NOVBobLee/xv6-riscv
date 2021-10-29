@@ -160,16 +160,13 @@ void
 syscall(void)
 {
   int num;
-  int a, b;
   struct proc *p = myproc();
 
   num = p->trapframe->a7;
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
     p->trapframe->a0 = syscalls[num]();
     // tracing systemcall
-    a = p->tracemask;
-    b = a & 1<<num;
-    if (a && b)
+    if (p->tracemask && p->tracemask & 1<<num)
         printf("%d: syscall %s -> %d\n", p->pid, syscall_names[num], p->trapframe->a0);
   } else {
     printf("%d %s: unknown sys call %d\n",
