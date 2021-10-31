@@ -4,7 +4,7 @@
 int main(int argc, char **argv)
 {
     int mask;
-    
+
     if (argc < 3) {
         fprintf(2, "Usage: trace <syscall mask> <cmd>\n");
         exit(1);
@@ -17,7 +17,7 @@ int main(int argc, char **argv)
     }
 
     exec(argv[2], &argv[2]);
-    
+
     exit(0);
 }
 
