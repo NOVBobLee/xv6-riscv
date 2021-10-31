@@ -292,6 +292,9 @@ fork(void)
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
+  // copy trace mask to child.
+  np->tracemask = p->tracemask;
+
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
 
@@ -663,4 +666,17 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+// sysinfo, nproc field: the number of not UNUSED processes
+int nproc(void)
+{
+    int nup = 0;
+    struct proc *p;
+    
+    for (p = proc; p < &proc[NPROC]; ++p) {
+        if (p->state != UNUSED)
+            ++nup;
+    }
+    return nup;
 }
