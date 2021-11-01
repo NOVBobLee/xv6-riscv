@@ -142,6 +142,8 @@ UPROGS=\
 \
 	$U/_trace\
 	$U/_sysinfotest\
+\
+	$U/_ugetpid\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
