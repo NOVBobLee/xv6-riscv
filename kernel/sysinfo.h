@@ -1,4 +1,4 @@
 struct sysinfo {
-    int freemem;
-    int nproc;
+    uint64 freemem;
+    uint64 nproc;
 };

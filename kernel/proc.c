@@ -669,14 +669,14 @@ procdump(void)
 }
 
 // sysinfo, nproc field: the number of not UNUSED processes
-int nproc(void)
+uint nproc(void)
 {
-    int nup = 0;
+    uint np = 0;
     struct proc *p;
     
     for (p = proc; p < &proc[NPROC]; ++p) {
         if (p->state != UNUSED)
-            ++nup;
+            ++np;
     }
-    return nup;
+    return np;
 }

@@ -82,10 +82,10 @@ kalloc(void)
 }
 
 // sysinfo, freemem field: the space of free mem
-int freemem(void)
+uint freemem(void)
 {
     struct run *r;
-    int freepage = 0;
+    uint freepage = 0;
 
     acquire(&kmem.lock);
     r = kmem.freelist;
