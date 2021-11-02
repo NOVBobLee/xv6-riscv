@@ -66,7 +66,10 @@
 //   TRAMPOLINE (the same page as in the kernel)
 #define TRAPFRAME (TRAMPOLINE - PGSIZE)
 
-// usyscall lab
+// usyscall lab (user process page)
+// USYSCALL (p->usyscall)
+// TRAPFRAME (p->trapframe)
+// TRAMPOLINE
 #define USYSCALL (TRAPFRAME - PGSIZE)
 struct usyscall {
     int pid;

@@ -288,6 +288,39 @@ uvmfree(pagetable_t pagetable, uint64 sz)
   freewalk(pagetable);
 }
 
+// recusive call r_vmprint(), see freewalk()
+static void r_vmprint(pagetable_t pagetable, uint level)
+{
+    char *leveldots;
+    uint64 pa, flags;
+    pte_t pte;
+
+    if (level == 2)
+        leveldots = " ..";
+    else if (level == 1)
+        leveldots = " .. ..";
+    else
+        leveldots = " .. .. ..";
+
+    for (int i = 0; i < 512; ++i) {
+        pte = pagetable[i];
+        if (pte & PTE_V) {
+            pa = PTE2PA(pte);
+            flags = PTE_FLAGS(pte);
+            printf("%s%d: pte %p pa %p %d\n", leveldots, i, pte, pa, flags);
+            //if ((pte & (PTE_R|PTE_W|PTE_X)) == 0)
+            if (level > 0)
+                r_vmprint((pagetable_t)pa, level - 1);
+        }
+    }
+}
+
+void vmprint(pagetable_t pagetable)
+{
+    printf("page table %p\n", pagetable);
+    r_vmprint(pagetable, 2);
+}
+
 // Given a parent process's page table, copy
 // its memory into a child's page table.
 // Copies both the page table and the
