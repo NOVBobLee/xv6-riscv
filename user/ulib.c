@@ -3,6 +3,8 @@
 #include "kernel/fcntl.h"
 #include "user/user.h"
 
+#define USYSCALL (0x3fffffdL << 12)
+
 char*
 strcpy(char *s, const char *t)
 {
@@ -133,4 +135,10 @@ void *
 memcpy(void *dst, const void *src, uint n)
 {
   return memmove(dst, src, n);
+}
+
+int ugetpid(void)
+{
+    int pid = *(int * const) USYSCALL;
+    return pid;
 }

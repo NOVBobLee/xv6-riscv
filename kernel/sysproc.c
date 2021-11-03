@@ -122,3 +122,53 @@ uint64 sys_sysinfo(void)
         return -1;
     return 0;
 }
+
+// system call pgaccess
+uint64 sys_pgaccess(void)
+{
+    pagetable_t pagetable;
+    int upages, level;
+    uint64 uresult, result = 0, upg = 0;
+    pte_t *pte;
+    struct proc *p;
+
+    if (argaddr(0, &upg) < 0)
+        return -1;
+    if (argint(1, &upages) < 0)
+        return -1;
+    if (argaddr(2, &uresult) < 0)
+        return -1;
+
+    // max bits of bitmask result in uint64
+    if (upages > 32)
+        return -1;
+
+    p = myproc();
+    //vmprint(p->pagetable);
+
+    for (int page = 0; page < upages; ++page) {
+        pagetable = p->pagetable;
+
+        // walk to level 0 pagetable directory
+        for (level = 2; level > 0; --level) {
+            pte = &pagetable[PX(level, upg)];
+            if (*pte & PTE_V)
+                pagetable = (pagetable_t) PTE2PA(*pte);
+            else
+                goto pga_nextpage;
+        }
+        // level 0 pte
+        pte = &pagetable[PX(level, upg)];
+
+        // check access bit
+        if (*pte & PTE_A) {
+            result |= 1L << page;
+            *pte &= ~PTE_A;
+        }
+
+pga_nextpage:
+        upg += PGSIZE;
+    }
+
+    return copyout(p->pagetable, uresult, (char *)&result, sizeof(uint));
+}

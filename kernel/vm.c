@@ -291,23 +291,18 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 // recusive call r_vmprint(), see freewalk()
 static void r_vmprint(pagetable_t pagetable, uint level)
 {
-    char *leveldots;
     uint64 pa, flags;
     pte_t pte;
-
-    if (level == 2)
-        leveldots = " ..";
-    else if (level == 1)
-        leveldots = " .. ..";
-    else
-        leveldots = " .. .. ..";
+    int j;
 
     for (int i = 0; i < 512; ++i) {
         pte = pagetable[i];
         if (pte & PTE_V) {
             pa = PTE2PA(pte);
             flags = PTE_FLAGS(pte);
-            printf("%s%d: pte %p pa %p %d\n", leveldots, i, pte, pa, flags);
+            for (j = level; j < 3; ++j)
+                printf(" ..");
+            printf("%d: pte %p pa %p %d\n", i, pte, pa, flags);
             //if ((pte & (PTE_R|PTE_W|PTE_X)) == 0)
             if (level > 0)
                 r_vmprint((pagetable_t)pa, level - 1);

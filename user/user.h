@@ -29,6 +29,10 @@ int trace(int);
 struct sysinfo;
 int sysinfo(struct sysinfo *);
 
+// lab pgtbl
+int ugetpid(void);
+int pgaccess(void *, int, void *);
+
 // ulib.c
 int stat(const char*, struct stat*);
 char* strcpy(char*, const char*);
