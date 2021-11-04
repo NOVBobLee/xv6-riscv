@@ -30,7 +30,6 @@ struct sysinfo;
 int sysinfo(struct sysinfo *);
 
 // lab pgtbl
-int ugetpid(void);
 int pgaccess(void *, int, void *);
 
 // ulib.c
@@ -49,3 +48,4 @@ void free(void*);
 int atoi(const char*);
 int memcmp(const void *, const void *, uint);
 void *memcpy(void *, const void *, uint);
+int ugetpid(void);

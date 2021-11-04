@@ -139,7 +139,7 @@ uint64 sys_pgaccess(void)
     if (argaddr(2, &uresult) < 0)
         return -1;
 
-    // max bits of bitmask result in uint64
+    // max bits of bitmask result in uint
     if (upages > 32)
         return -1;
 
@@ -170,5 +170,6 @@ pga_nextpage:
         upg += PGSIZE;
     }
 
+    // *uresult is uint in user program
     return copyout(p->pagetable, uresult, (char *)&result, sizeof(uint));
 }
