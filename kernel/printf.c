@@ -132,3 +132,21 @@ printfinit(void)
   initlock(&pr.lock, "pr");
   pr.locking = 1;
 }
+
+/* lab traps: backtrace
+ *
+ * $ addr2line -e kernel/kernel
+ * copy-paste the addrs into the hanging command
+ * ^d to stop the process addr2line
+ */
+void backtrace(void)
+{
+    uint64 fp, ra;
+
+    fp = r_fp();
+    while (fp != PGROUNDUP(fp)) {
+        ra = *(uint64 *const) (fp - 8);
+        printf("%p\n", ra);
+        fp = *(uint64 *const) (fp - 16);
+    }
+}
