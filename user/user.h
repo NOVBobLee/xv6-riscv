@@ -32,6 +32,10 @@ int sysinfo(struct sysinfo *);
 // lab pgtbl
 int pgaccess(void *, int, void *);
 
+// lab traps
+int sigalarm(int, void (*)());
+int sigreturn(void);
+
 // ulib.c
 int stat(const char*, struct stat*);
 char* strcpy(char*, const char*);

@@ -77,8 +77,22 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
-    yield();
+  if(which_dev == 2) {
+      // lab traps: sigalarm enabled
+      if (p->usyscall->interval > 0) {
+          ++p->usyscall->current_ticks;
+          // times up and re-arm the ticks
+          if (!p->usyscall->alarm_handling &&
+                  p->usyscall->current_ticks == p->usyscall->interval) {
+              p->usyscall->alarm_handling = 1;
+              p->usyscall->current_ticks = 0;
+              memmove(p->usyscall->trapframe, p->trapframe,
+                      sizeof(struct trapframe));
+              p->trapframe->epc = p->usyscall->handler;
+          }
+      }
+      yield();
+  }
 
   usertrapret();
 }

@@ -73,4 +73,9 @@
 #define USYSCALL (TRAPFRAME - PGSIZE)
 struct usyscall {
     int pid;
+    int interval;
+    int current_ticks;
+    int alarm_handling;
+    uint64 handler;
+    struct trapframe *trapframe;
 };

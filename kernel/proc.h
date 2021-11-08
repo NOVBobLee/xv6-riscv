@@ -96,7 +96,7 @@ struct proc {
   // mask for tracing system calls
   int tracemask;
 
-  // usyscall page
+  // usyscall page, including ugetpid(), sigalarm()
   struct usyscall *usyscall;
 
   // proc_tree_lock must be held when using this:

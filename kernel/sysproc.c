@@ -173,3 +173,33 @@ pga_nextpage:
     // *uresult is uint in user program
     return copyout(p->pagetable, uresult, (char *)&result, sizeof(uint));
 }
+
+// lab traps: sigalarm
+uint64 sys_sigalarm(void)
+{
+    struct proc *p;
+    int interval;
+
+    p = myproc();
+
+    if (argint(0, &interval) < 0)
+        return -1;
+    if (argaddr(1, &p->usyscall->handler) < 0)
+        return -1;
+
+    // start alarm
+    p->usyscall->interval = interval;
+
+    return 0;
+}
+
+// lab traps: sigreturn
+uint64 sys_sigreturn(void)
+{
+    struct proc *p;
+
+    p = myproc();
+    memmove(p->trapframe, p->usyscall->trapframe, sizeof(struct trapframe));
+    p->usyscall->alarm_handling = 0;
+    return 0;
+}
