@@ -150,11 +150,6 @@ found:
   p->usyscall->current_ticks = 0;
   p->usyscall->handler = 0;
   p->usyscall->alarm_handling = 0;
-  if ((p->usyscall->trapframe = (struct trapframe *)kalloc()) == 0) {
-      freeproc(p);
-      release(&p->lock);
-      return 0;
-  }
 
   // Set up new context to start executing at forkret,
   // which returns to user space.
@@ -171,10 +166,6 @@ found:
 static void
 freeproc(struct proc *p)
 {
-    // free usyscall->trapframe first
-    if (p->usyscall->trapframe)
-        kfree((void *) p->usyscall->trapframe);
-    p->usyscall->trapframe = 0;
     // free usyscall page
     if (p->usyscall)
         kfree((void *)p->usyscall);

@@ -199,7 +199,7 @@ uint64 sys_sigreturn(void)
     struct proc *p;
 
     p = myproc();
-    memmove(p->trapframe, p->usyscall->trapframe, sizeof(struct trapframe));
+    memmove(p->trapframe, &p->usyscall->trapframe, sizeof(struct trapframe2));
     p->usyscall->alarm_handling = 0;
     return 0;
 }

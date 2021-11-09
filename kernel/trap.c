@@ -86,8 +86,8 @@ usertrap(void)
                   p->usyscall->current_ticks == p->usyscall->interval) {
               p->usyscall->alarm_handling = 1;
               p->usyscall->current_ticks = 0;
-              memmove(p->usyscall->trapframe, p->trapframe,
-                      sizeof(struct trapframe));
+              memmove(&p->usyscall->trapframe, p->trapframe,
+                      sizeof(struct trapframe2));
               p->trapframe->epc = p->usyscall->handler;
           }
       }
