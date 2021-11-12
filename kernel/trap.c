@@ -71,35 +71,45 @@ usertrap(void)
   } else if((which_dev = devintr()) != 0){
     // ok
 
-  // pgft write on cow page
-  } else if ((r_stval() & PTE_COW) == PTE_COW && cause == 0xf) {
-      void *newpa;
-      uint64 cowva, cowpa;
+  // pgft write
+  } else if (cause == 0xf) {
+      uint64 cowva;
       pte_t *cowpte;
-      uint flags;
-
-      // alloc new page
-      if ((newpa = kalloc()) == 0) {
-          p->killed = 1;
-          goto gobacknow;
-      }
-
-      // copy content to the new page
       cowva = PGROUNDDOWN(r_stval());
       cowpte = walk(p->pagetable, cowva, 0);
-      cowpa = PTE2PA((uint64)cowpte);
-      memmove(newpa, (char *)cowpa, PGSIZE);
 
-      // unmap the old mapping
-      flags = PTE_FLAGS(*cowpte);
-      uvmunmap(p->pagetable, cowva, 1, 1);
+      // it's cow page
+      if ((*cowpte & PTE_COW) == PTE_COW) {
+          uint64 cowpa;
+          void *newpa;
+          uint flags;
 
-      // add new mapping
-      flags &= ~PTE_COW;
-      flags |= PTE_W;
-      mappages(p->pagetable, cowva, 1, (uint64)newpa, flags);
+          // alloc new page
+          if ((newpa = kalloc()) == 0) {
+              p->killed = 1;
+              goto gobacknow;
+          }
+
+          // copy content to the new page
+          cowpa = PTE2PA(*cowpte);
+          memmove(newpa, (char *)cowpa, PGSIZE);
+
+          // unmap the old mapping
+          flags = PTE_FLAGS(*cowpte);
+          uvmunmap(p->pagetable, cowva, 1, 1);
+
+          // add new mapping
+          flags &= ~PTE_COW;
+          flags |= PTE_W;
+          mappages(p->pagetable, cowva, 1, (uint64)newpa, flags);
+
+      // it's not cow page
+      } else
+          goto errorr;
 
   } else {
+errorr:
+    vmprint(p->pagetable);
     printf("usertrap(): unexpected scause %p pid=%d\n", cause, p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;

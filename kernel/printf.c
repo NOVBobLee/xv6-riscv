@@ -64,7 +64,7 @@ void
 printf(char *fmt, ...)
 {
   va_list ap;
-  int i, c, locking;
+  int i, c, locking, cc;
   char *s;
 
   locking = pr.locking;
@@ -99,6 +99,12 @@ printf(char *fmt, ...)
       for(; *s; s++)
         consputc(*s);
       break;
+
+    case 'c':
+      cc = va_arg(ap, int);
+      consputc(cc);
+      break;
+
     case '%':
       consputc('%');
       break;
