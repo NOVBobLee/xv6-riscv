@@ -24,7 +24,7 @@ struct {
 } kmem;
 
 // counter for cow page reference
-#define PA2COWIDX(pa) ((PHYSTOP - (uint64)(pa)) >> 12)
+#define PA2COWIDX(pa) (((uint64)(pa) - KERNBASE) >> 12)
 #define MAXPHYPG ((PHYSTOP - KERNBASE) >> 12)
 struct {
     struct spinlock lock;
@@ -49,10 +49,17 @@ static int cow6ref(void *pa)
     return c;
 }
 
+static void initcow(void)
+{
+  initlock(&cowpg.lock, "cowlock");
+  for (int i = 0; i < MAXPHYPG; ++i)
+      cowpg.refcount[i] = 0;
+}
+
 void
 kinit()
 {
-  initlock(&cowpg.lock, "cowlock");
+  initcow();
   initlock(&kmem.lock, "kmem");
   freerange(end, (void*)PHYSTOP);
 }
@@ -74,13 +81,12 @@ void
 kfree(void *pa)
 {
   struct run *r;
-  int c;
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
   // return if the page is still referenced
-  if ((c = cow6ref(pa)) > 0)
+  if (cow6ref(pa) > 0)
       return;
 
   // Fill with junk to catch dangling refs.

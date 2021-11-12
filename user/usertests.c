@@ -2634,6 +2634,8 @@ execout(char *s)
         uint64 a = (uint64) sbrk(4096);
         if(a == 0xffffffffffffffffLL)
           break;
+        else if (a > 0xffffffffffffffffLL)
+            printf("%x\n", a);
         *(char*)(a + 4096 - 1) = 1;
       }
 

@@ -29,7 +29,7 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
-extern pte_t *walk(pagetable_t, uint64, int);
+extern int cowalloc(pagetable_t, uint64);
 
 //
 // handle an interrupt, exception, or system call from user space.
@@ -73,42 +73,17 @@ usertrap(void)
 
   // pgft write
   } else if (cause == 0xf) {
-      uint64 cowva;
-      pte_t *cowpte;
-      cowva = PGROUNDDOWN(r_stval());
-      cowpte = walk(p->pagetable, cowva, 0);
+      int rv = cowalloc(p->pagetable, r_stval());
 
-      // it's cow page
-      if ((*cowpte & PTE_COW) == PTE_COW) {
-          uint64 cowpa;
-          void *newpa;
-          uint flags;
-
-          // alloc new page
-          if ((newpa = kalloc()) == 0) {
-              p->killed = 1;
-              goto gobacknow;
-          }
-
-          // copy content to the new page
-          cowpa = PTE2PA(*cowpte);
-          memmove(newpa, (char *)cowpa, PGSIZE);
-
-          // unmap the old mapping
-          flags = PTE_FLAGS(*cowpte);
-          uvmunmap(p->pagetable, cowva, 1, 1);
-
-          // add new mapping
-          flags &= ~PTE_COW;
-          flags |= PTE_W;
-          mappages(p->pagetable, cowva, 1, (uint64)newpa, flags);
-
-      // it's not cow page
-      } else
-          goto errorr;
+      // not on cow page
+      if (rv == -1)
+          goto other_exception;
+      // no physical mem
+      else if (rv == -2)
+          goto gobacknow;
 
   } else {
-errorr:
+other_exception:
     vmprint(p->pagetable);
     printf("usertrap(): unexpected scause %p pid=%d\n", cause, p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

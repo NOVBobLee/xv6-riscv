@@ -312,9 +312,9 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     *pte |= PTE_COW;
     flags = PTE_FLAGS(*pte);
 
-    if(mappages(new, i, PGSIZE, pa, flags) != 0){
+    // fail
+    if(mappages(new, i, PGSIZE, pa, flags) != 0)
       goto err;
-    }
 
     // increase cow page reference count
     cow8ref((void *)pa);
@@ -322,6 +322,8 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   return 0;
 
  err:
+  *pte |= PTE_W;
+  *pte &= ~PTE_COW;
   uvmunmap(new, 0, i / PGSIZE, 1);
   return -1;
 }
@@ -339,6 +341,46 @@ uvmclear(pagetable_t pagetable, uint64 va)
   *pte &= ~PTE_U;
 }
 
+/*
+ * when pgfault write (0xf)
+ * input: process->pagetable, va = stval
+ * ouput:  0 if success
+ *        -1 if not cow page
+ *        -2 if no physical mem
+ */
+int cowalloc(pagetable_t pagetable, uint64 inva)
+{
+    uint64 cowpa;
+    pte_t *inpte;
+    void *newpa;
+    uint64 flags;
+
+    inva = PGROUNDDOWN(inva);
+    inpte = walk(pagetable, inva, 0);
+    // not cow page
+    if (!(*inpte & PTE_COW))
+        return -1;
+
+    // no physical memory
+    if ((newpa = kalloc()) == 0)
+        return -2;
+
+    // copy content to the new page
+    cowpa = PTE2PA(*inpte);
+    memmove(newpa, (char *)cowpa, PGSIZE);
+
+    // unmap the old mapping
+    flags = PTE_FLAGS(*inpte);
+    uvmunmap(pagetable, inva, 1, 1);
+
+    // add new mapping
+    flags &= ~PTE_COW;
+    flags |= PTE_W;
+    mappages(pagetable, inva, 1, (uint64)newpa, flags);
+
+    return 0;
+}
+
 // Copy from kernel to user.
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
@@ -349,6 +391,11 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+
+    // return -2 if no physical mem
+    if (cowalloc(pagetable, va0) == -2)
+        return -1;
+
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
