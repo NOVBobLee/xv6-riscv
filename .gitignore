@@ -17,3 +17,4 @@ user/usys.S
 .gdbinit
 .gdbinit.tmpl-riscv
 todolist
+tags

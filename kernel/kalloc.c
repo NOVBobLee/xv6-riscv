@@ -23,9 +23,36 @@ struct {
   struct run *freelist;
 } kmem;
 
+// counter for cow page reference
+#define PA2COWIDX(pa) ((PHYSTOP - (uint64)(pa)) >> 12)
+#define MAXPHYPG ((PHYSTOP - KERNBASE) >> 12)
+struct {
+    struct spinlock lock;
+    int refcount[MAXPHYPG];
+} cowpg;
+
+// increase cow page reference count
+void cow8ref(void *pa)
+{
+    acquire(&cowpg.lock);
+    ++cowpg.refcount[PA2COWIDX(pa)];
+    release(&cowpg.lock);
+}
+
+// decrease reference count only when it's on cow page
+static int cow6ref(void *pa)
+{
+    int c;
+    acquire(&cowpg.lock);
+    c = --cowpg.refcount[PA2COWIDX(pa)];
+    release(&cowpg.lock);
+    return c;
+}
+
 void
 kinit()
 {
+  initlock(&cowpg.lock, "cowlock");
   initlock(&kmem.lock, "kmem");
   freerange(end, (void*)PHYSTOP);
 }
@@ -47,9 +74,14 @@ void
 kfree(void *pa)
 {
   struct run *r;
+  int c;
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
+
+  // return if the page is still referenced
+  if ((c = cow6ref(pa)) > 0)
+      return;
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -76,7 +108,10 @@ kalloc(void)
     kmem.freelist = r->next;
   release(&kmem.lock);
 
-  if(r)
-    memset((char*)r, 5, PGSIZE); // fill with junk
+  if(r) {
+      memset((char*)r, 5, PGSIZE); // fill with junk
+      cowpg.refcount[PA2COWIDX(r)] = 1;
+  }
+
   return (void*)r;
 }

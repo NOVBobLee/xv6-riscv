@@ -29,6 +29,8 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
+extern pte_t *walk(pagetable_t, uint64, int);
+
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
@@ -50,7 +52,8 @@ usertrap(void)
   // save user program counter.
   p->trapframe->epc = r_sepc();
   
-  if(r_scause() == 8){
+  int cause = r_scause();
+  if(cause == 8){
     // system call
 
     if(p->killed)
@@ -67,12 +70,42 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+
+  // pgft write on cow page
+  } else if ((r_stval() & PTE_COW) == PTE_COW && cause == 0xf) {
+      void *newpa;
+      uint64 cowva, cowpa;
+      pte_t *cowpte;
+      uint flags;
+
+      // alloc new page
+      if ((newpa = kalloc()) == 0) {
+          p->killed = 1;
+          goto gobacknow;
+      }
+
+      // copy content to the new page
+      cowva = PGROUNDDOWN(r_stval());
+      cowpte = walk(p->pagetable, cowva, 0);
+      cowpa = PTE2PA((uint64)cowpte);
+      memmove(newpa, (char *)cowpa, PGSIZE);
+
+      // unmap the old mapping
+      flags = PTE_FLAGS(*cowpte);
+      uvmunmap(p->pagetable, cowva, 1, 1);
+
+      // add new mapping
+      flags &= ~PTE_COW;
+      flags |= PTE_W;
+      mappages(p->pagetable, cowva, 1, (uint64)newpa, flags);
+
   } else {
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+    printf("usertrap(): unexpected scause %p pid=%d\n", cause, p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
   }
 
+gobacknow:
   if(p->killed)
     exit(-1);
 
