@@ -429,3 +429,47 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+static char flag10[] = "VRWXUGADC";
+
+static void printflags(uint64 flags)
+{
+    uint64 pw2;
+    printf("[");
+    for (int p = 8; p >= 0; --p) {
+        pw2 = 1 << p;
+        if ((flags & pw2) == pw2)
+            printf("%c", flag10[p]);
+        else
+            printf(".");
+    }
+    printf("]\n");
+}
+
+// recusive call r_vmprint(), see freewalk()
+static void r_vmprint(pagetable_t pagetable, uint level)
+{
+    uint64 pa, flags;
+    pte_t pte;
+    int j;
+
+    for (int i = 0; i < 512; ++i) {
+        pte = pagetable[i];
+        if (pte & PTE_V) {
+            pa = PTE2PA(pte);
+            flags = PTE_FLAGS(pte);
+            for (j = level; j < 3; ++j)
+                printf(" ..");
+            printf("%d: pte %p pa %p ", i, pte, pa, flags);
+            printflags(flags);
+            if (level > 0)
+                r_vmprint((pagetable_t)pa, level - 1);
+        }
+    }
+}
+
+void vmprint(pagetable_t pagetable)
+{
+    printf("page table %p\n", pagetable);
+    r_vmprint(pagetable, 2);
+}
