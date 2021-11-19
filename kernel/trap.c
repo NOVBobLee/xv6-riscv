@@ -73,24 +73,22 @@ usertrap(void)
 
   // pgft write
   } else if (cause == 0xf) {
-      int rv = cowalloc(p->pagetable, r_stval());
+      uint64 stval = r_stval();
 
-      // not on cow page
-      if (rv == -1)
-          goto other_exception;
-      // no physical mem
-      else if (rv == -2)
-          goto gobacknow;
+      if (stval > p->sz)
+          goto exceptions;
+
+      if (cowalloc(p->pagetable, stval) < 0)
+          goto exceptions;
 
   } else {
-other_exception:
-    vmprint(p->pagetable);
+exceptions:
+    //vmprint(p->pagetable);
     printf("usertrap(): unexpected scause %p pid=%d\n", cause, p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
   }
 
-gobacknow:
   if(p->killed)
     exit(-1);
 

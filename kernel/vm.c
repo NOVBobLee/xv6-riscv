@@ -312,7 +312,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     *pte |= PTE_COW;
     flags = PTE_FLAGS(*pte);
 
-    // fail
+    // add new mapping
     if(mappages(new, i, PGSIZE, pa, flags) != 0)
       goto err;
 
@@ -345,7 +345,7 @@ uvmclear(pagetable_t pagetable, uint64 va)
  * when pgfault write (0xf)
  * input: process->pagetable, va = stval
  * ouput:  0 if success
- *        -1 if not cow page
+ *        -1 if not valid user cow page
  *        -2 if no physical mem
  */
 int cowalloc(pagetable_t pagetable, uint64 inva)
@@ -355,10 +355,23 @@ int cowalloc(pagetable_t pagetable, uint64 inva)
     void *newpa;
     uint64 flags;
 
+    // invalid va
+    if (inva >= MAXVA)
+        return -1;
+
     inva = PGROUNDDOWN(inva);
     inpte = walk(pagetable, inva, 0);
-    // not cow page
-    if (!(*inpte & PTE_COW))
+
+    // empty pte after walk
+    if (inpte == 0)
+        return -1;
+
+    // not a write page fault
+    if (*inpte & PTE_W)
+        panic("cowalloc");
+
+    // not user cow page
+    if (!(*inpte & PTE_COW) || !(*inpte & PTE_U) || !(*inpte & PTE_V))
         return -1;
 
     // no physical memory
@@ -369,7 +382,7 @@ int cowalloc(pagetable_t pagetable, uint64 inva)
     cowpa = PTE2PA(*inpte);
     memmove(newpa, (char *)cowpa, PGSIZE);
 
-    // unmap the old mapping
+    // unmap the old mapping (kfree in uvmunmap)
     flags = PTE_FLAGS(*inpte);
     uvmunmap(pagetable, inva, 1, 1);
 
@@ -388,17 +401,30 @@ int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
+  pte_t *pte;
 
   while(len > 0){
-    va0 = PGROUNDDOWN(dstva);
 
-    // return -2 if no physical mem
-    if (cowalloc(pagetable, va0) == -2)
+    // over max va space
+    if (dstva >= MAXVA) {
+        printf("copyout over maxva\n");
+        return -1;
+    }
+
+    va0 = PGROUNDDOWN(dstva);
+    pte = walk(pagetable, va0, 0);
+
+    // return if not valid and user page
+    if (pte == 0 || !(*pte & PTE_U) || !(*pte & PTE_V))
         return -1;
 
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
+    // if not writable check whether it's cow page
+    if ((*pte & PTE_W) == 0) {
+        if (cowalloc(pagetable, va0) < 0)
+            return -1;
+    }
+
+    pa0 = PTE2PA(*pte);
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;

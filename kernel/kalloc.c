@@ -26,40 +26,39 @@ struct {
 // counter for cow page reference
 #define PA2COWIDX(pa) (((uint64)(pa) - KERNBASE) >> 12)
 #define MAXPHYPG ((PHYSTOP - KERNBASE) >> 12)
-struct {
-    struct spinlock lock;
-    int refcount[MAXPHYPG];
-} cowpg;
+int refcount[MAXPHYPG];
 
 // increase cow page reference count
 void cow8ref(void *pa)
 {
-    acquire(&cowpg.lock);
-    ++cowpg.refcount[PA2COWIDX(pa)];
-    release(&cowpg.lock);
+    if ((uint64)pa > PHYSTOP)
+        panic("cow8ref");
+
+    acquire(&kmem.lock);
+    int *c = &refcount[PA2COWIDX(pa)];
+    if (*c < 1)
+        panic("cow8ref refcount 0");
+    ++*c;
+    release(&kmem.lock);
 }
 
-// decrease reference count only when it's on cow page
+// decrease reference count
 static int cow6ref(void *pa)
 {
-    int c;
-    acquire(&cowpg.lock);
-    c = --cowpg.refcount[PA2COWIDX(pa)];
-    release(&cowpg.lock);
-    return c;
-}
-
-static void initcow(void)
-{
-  initlock(&cowpg.lock, "cowlock");
-  for (int i = 0; i < MAXPHYPG; ++i)
-      cowpg.refcount[i] = 0;
+    int *c, tmp;
+    acquire(&kmem.lock);
+    c = &refcount[PA2COWIDX(pa)];
+    // no page using
+    if (*c < 1)
+        panic("cow6ref");
+    tmp = --*c;
+    release(&kmem.lock);
+    return tmp;
 }
 
 void
 kinit()
 {
-  initcow();
   initlock(&kmem.lock, "kmem");
   freerange(end, (void*)PHYSTOP);
 }
@@ -69,8 +68,11 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
+  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE) {
+    // (only one core now => no need to lock)
+    refcount[PA2COWIDX(p)] = 1;
     kfree(p);
+  }
 }
 
 // Free the page of physical memory pointed at by v,
@@ -107,17 +109,21 @@ void *
 kalloc(void)
 {
   struct run *r;
+  int *rc;
 
   acquire(&kmem.lock);
   r = kmem.freelist;
-  if(r)
+  if(r) {
     kmem.freelist = r->next;
+    rc = &refcount[PA2COWIDX(r)];
+    if (*rc != 0)
+        panic("kalloc refcount");
+    *rc = 1;
+  }
   release(&kmem.lock);
 
-  if(r) {
+  if(r)
       memset((char*)r, 5, PGSIZE); // fill with junk
-      cowpg.refcount[PA2COWIDX(r)] = 1;
-  }
 
   return (void*)r;
 }

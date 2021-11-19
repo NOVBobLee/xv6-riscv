@@ -79,7 +79,7 @@ copyout(char *s)
     if(fd < 0){
       printf("open(README) failed\n");
       exit(1);
-    }
+   }
     int n = read(fd, (void*)addr, 8192);
     if(n > 0){
       printf("read(fd, %p, 8192) returned %d, not -1 or 0\n", addr, n);
@@ -2634,8 +2634,6 @@ execout(char *s)
         uint64 a = (uint64) sbrk(4096);
         if(a == 0xffffffffffffffffLL)
           break;
-        else if (a > 0xffffffffffffffffLL)
-            printf("%x\n", a);
         *(char*)(a + 4096 - 1) = 1;
       }
 
