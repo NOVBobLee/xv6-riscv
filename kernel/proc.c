@@ -439,17 +439,21 @@ scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
-  int found;
+  int nfy;  // not finished yet
   
   c->proc = 0;
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
 
-    found = 0;
+    nfy = 0;
 
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
+      // collect not finished proc
+      if (p->state != UNUSED)
+          ++nfy;
+
       if(p->state == RUNNABLE) {
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
@@ -461,13 +465,12 @@ scheduler(void)
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
-
-        found = 1;
       }
       release(&p->lock);
     }
 
-    if (found == 0) {
+    // 2 means init, sh
+    if (nfy <= 2) {
         intr_on();
         asm volatile("wfi");
     }
