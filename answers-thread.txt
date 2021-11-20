@@ -1,0 +1,8 @@
+Matters:
+    1. there is shared memory table entries
+    2. put() checks entry e->key, updates e->value, but no one checks e->value
+    3. insert() updates entry e->next
+
+Doesn't Matter:
+    1. get() also checks e->key, but there's no updates to destroy the invariant
+
