@@ -140,8 +140,8 @@ UPROGS=\
 	$U/_xargs\
 	$U/_uptime\
 
-fs.img: mkfs/mkfs README user/xargstest.sh $(UPROGS)
-	mkfs/mkfs fs.img README user/xargstest.sh $(UPROGS)
+fs.img: mkfs/mkfs README $(UPROGS)
+	mkfs/mkfs fs.img README $(UPROGS)
 
 -include kernel/*.d user/*.d
 
