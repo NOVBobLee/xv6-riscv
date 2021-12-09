@@ -141,6 +141,8 @@ UPROGS=\
 	$U/_uptime\
 \
 	$U/_bigfile\
+	$U/_symlinktest\
+
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
