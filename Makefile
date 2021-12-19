@@ -141,6 +141,7 @@ UPROGS=\
 	$U/_uptime\
 \
 	$U/_mmaptest\
+	$U/_lazytests\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -169,10 +171,13 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     panic("uvmunmap: not aligned");
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
+    /* may be lazy alloc pg */
     if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
+        continue;
+    //  panic("uvmunmap: walk");
     if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
+        continue;
+    //  panic("uvmunmap: not mapped");
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -303,10 +308,13 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
+    /* lazy alloc pg */
     if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
+        continue;
+    //  panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+        continue;
+    //  panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
@@ -337,6 +345,8 @@ uvmclear(pagetable_t pagetable, uint64 va)
   *pte &= ~PTE_U;
 }
 
+int lazyalloc(uint64);
+
 // Copy from kernel to user.
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
@@ -344,6 +354,9 @@ int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
+
+  // lazy alloc (check inside)
+  lazyalloc(dstva);
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
@@ -369,6 +382,9 @@ int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
   uint64 n, va0, pa0;
+
+  // lazy alloc (check inside)
+  lazyalloc(srcva);
 
   while(len > 0){
     va0 = PGROUNDDOWN(srcva);
@@ -473,3 +489,47 @@ void vmprint(pagetable_t pagetable)
     printf("page table %p\n", pagetable);
     r_vmprint(pagetable, 2);
 }
+
+static int  // bool
+islazy(uint64 addr)
+{
+    struct proc *p;
+    pte_t *pte;
+
+    p = myproc();
+    if (addr > p->sz)
+        return 0;
+    pte = walk(p->pagetable, addr, 0);
+    if (pte && *pte & PTE_V)
+        return 0;
+    if (addr <= p->trapframe->sp)
+        return 0;
+
+    return 1;
+}
+
+int
+lazyalloc(uint64 addr)
+{
+    char *mem;
+    struct proc *p;
+
+    p = myproc();
+
+    // varify addr
+    if (!islazy(addr))
+        return -1;
+
+    // lazy alloc
+    if ((mem = kalloc()) == 0)
+        return -1;
+    memset(mem, 0, PGSIZE);
+    addr = PGROUNDDOWN(addr);
+    if (mappages(p->pagetable, addr, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0) {
+        kfree(mem);
+        return -1;
+    }
+
+    return 0;
+}
+
