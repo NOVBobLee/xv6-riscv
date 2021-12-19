@@ -18,3 +18,4 @@ user/usys.S
 .gdbinit.tmpl-riscv
 todolist
 tags
+cscope.*
