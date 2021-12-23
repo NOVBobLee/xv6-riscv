@@ -7,6 +7,9 @@
 #include "fs.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "fcntl.h"
+#include "sleeplock.h"
+#include "file.h"
 
 /*
  * the kernel's page table.
@@ -16,6 +19,9 @@ pagetable_t kernel_pagetable;
 extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
+
+static int islazy(uint64, struct proc *);
+int lazyalloc(uint64, uint64);
 
 // Make a direct-map page table for the kernel.
 pagetable_t
@@ -277,6 +283,7 @@ freewalk(pagetable_t pagetable)
       freewalk((pagetable_t)child);
       pagetable[i] = 0;
     } else if(pte & PTE_V){
+        printf("leaf: %p\n", pte);
       panic("freewalk: leaf");
     }
   }
@@ -310,11 +317,10 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   for(i = 0; i < sz; i += PGSIZE){
     /* lazy alloc pg */
     if((pte = walk(old, i, 0)) == 0)
-        continue;
-    //  panic("uvmcopy: pte should exist");
+      panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
         continue;
-    //  panic("uvmcopy: page not present");
+      //panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
@@ -345,8 +351,6 @@ uvmclear(pagetable_t pagetable, uint64 va)
   *pte &= ~PTE_U;
 }
 
-int lazyalloc(uint64);
-
 // Copy from kernel to user.
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
@@ -356,7 +360,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
   uint64 n, va0, pa0;
 
   // lazy alloc (check inside)
-  lazyalloc(dstva);
+  lazyalloc(dstva, 0);
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
@@ -384,7 +388,8 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
   uint64 n, va0, pa0;
 
   // lazy alloc (check inside)
-  lazyalloc(srcva);
+  if (islazy(srcva, myproc()))
+      return 0;
 
   while(len > 0){
     va0 = PGROUNDDOWN(srcva);
@@ -490,13 +495,32 @@ void vmprint(pagetable_t pagetable)
     r_vmprint(pagetable, 2);
 }
 
-static int  // bool
-islazy(uint64 addr)
+struct vma *
+findvma(uint64 addr, struct proc *p)
 {
-    struct proc *p;
+    struct vma *v;
+    uint64 start;
+    int i, length;
+
+    // if out of vma range
+    if (addr < VMASTART || addr >= VMASTART + NVMA * VMSIZE)
+        return 0;
+    // search vma
+    for (i = 0; i < NVMA; ++i) {
+        v = &p->vma[i];
+        start = v->start;
+        length = v->length;
+        if (length && addr >= start && addr < start + length)
+            return v;
+    }
+    return 0;
+}
+
+static int  // bool
+islazy(uint64 addr, struct proc *p)
+{
     pte_t *pte;
 
-    p = myproc();
     if (addr > p->sz)
         return 0;
     pte = walk(p->pagetable, addr, 0);
@@ -509,25 +533,159 @@ islazy(uint64 addr)
 }
 
 int
-lazyalloc(uint64 addr)
+lazyalloc(uint64 addr, uint64 scause)
 {
     char *mem;
     struct proc *p;
+    struct vma *v;
+    int perm, offset, prot;
+    struct inode *ip;
 
     p = myproc();
+    v = findvma(addr, p);
 
-    // varify addr
-    if (!islazy(addr))
+    // verify addr
+    if (!islazy(addr, p) && !v)
         return -1;
 
-    // lazy alloc
+    // check vma prot and pgft
+    if (v) {
+        prot = v->prot;
+        if (scause == 0x13 && !(prot & PROT_READ))
+            return -1;
+        if (scause == 0x15 && !(prot & PROT_WRITE))
+            return -1;
+    }
+
+    /* start lazy alloc */
     if ((mem = kalloc()) == 0)
         return -1;
     memset(mem, 0, PGSIZE);
+
+    // set perm
+    perm = PTE_U;
+    if (v) {
+        if (prot & PROT_READ)
+            perm |= PTE_R;
+        if (prot & PROT_WRITE)
+            perm |= PTE_W;
+        if (prot & PROT_EXEC)
+            perm |= PTE_X;
+    } else {
+        // lazy alloc, not mmap
+        perm = perm | PTE_R | PTE_W | PTE_X;
+    }
+
     addr = PGROUNDDOWN(addr);
-    if (mappages(p->pagetable, addr, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0) {
+    if (mappages(p->pagetable, addr, PGSIZE, (uint64)mem, perm) != 0) {
         kfree(mem);
         return -1;
+    }
+
+    // just lazy alloc, not mmap
+    if (!v)
+        return 0;
+
+    /* start mmap */
+    offset = v->offset + addr - v->start;   // all three are already pg-aligned
+    ip = v->file->ip;
+    ilock(ip);
+    // directly use pa w/o walking from va
+    readi(ip, 0, (uint64)mem, offset, PGSIZE);
+    iunlock(ip);
+
+    return 0;
+}
+
+static int
+safewriteback(struct vma *v, uint64 addr, int length)
+{
+    pte_t *pte;
+    int wbbyte;
+    struct inode *ip;
+
+    // return if page is not dirty or not MAP_SHARED
+    pte = walk(myproc()->pagetable, addr, 0);
+    if (!pte || !(*pte & PTE_D) || !(v->flags & MAP_SHARED))
+        return 0;
+
+    // write the modification back to disk block
+    ip = v->file->ip;
+    begin_op();
+    ilock(ip);
+    wbbyte = writei(ip, 0, PTE2PA(*pte), v->offset + addr - v->start, length);
+    iunlock(ip);
+    end_op();
+
+    return wbbyte;
+}
+
+uint64
+munmap(uint64 addr, int length)
+{
+    int rmpage;
+    struct proc *p;
+    struct vma *v;
+    enum {HEAD, TAIL, WHOLE} type;
+
+    p = myproc();
+    v = findvma(addr, p);
+
+    // return if vma not found
+    if (!v)
+        return -1;
+
+    // specify the munmap range
+    if (addr == v->start) {
+        // whole vma or just head
+        if (length == v->length) {
+            type = WHOLE;
+            rmpage = PGROUNDUP(length) / PGSIZE;
+            printf("WHOLE\n");
+        } else {
+            type = HEAD;
+            rmpage = length / PGSIZE;
+            printf("HEAD %d\n", length);
+        }
+    } else if (addr + length - 1 == v->start + v->length - 1) {
+        type = TAIL;
+        addr = PGROUNDUP(addr);
+        rmpage = PGROUNDUP(length) / PGSIZE;
+        printf("TAIL %d\n", length);
+    } else {
+        // in the middle of the vma
+        return -1;
+    }
+
+    /* munmap */
+    while (rmpage > 0) {
+        // write back if the page is dirty and MAP_SHARE
+        int rmlen = (length > PGSIZE) ? PGSIZE : length;
+        safewriteback(v, addr, rmlen);
+        uvmunmap(p->pagetable, addr, 1, 1);
+
+        // update vma meta data
+        if (type != TAIL) {
+            // head or whole
+            v->offset += rmlen;
+            v->start += rmlen;
+        }
+        v->length -= rmlen;
+
+        // new addr and length
+        addr += rmlen;
+        length -= rmlen;
+        --rmpage;   // remain pages
+    }
+
+    // --file->ref if v->length is zero
+    if (v->length == 0) {
+        fileclose(v->file);
+        v->start = 0;
+        v->prot = 0;
+        v->flags = 0;
+        v->file = 0;
+        v->offset = 0;
     }
 
     return 0;

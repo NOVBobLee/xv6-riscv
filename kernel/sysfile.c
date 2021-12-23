@@ -15,6 +15,7 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+#include "memlayout.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -488,11 +489,67 @@ sys_pipe(void)
 uint64
 sys_mmap(void)
 {
-    return 0;
+    uint64 addr;    // mmap start point, NULL means kernel decides it
+    int length, prot, flags, offset;
+    struct file *f;
+    struct proc *p;
+    struct vma *v;
+
+    /**
+     * in this lab,
+     * assume that addr=0, offset=0
+     * map_shared means the modification to mem will be writen back to file
+     */
+
+    if (argaddr(0, &addr) < 0 || argint(1, &length) < 0 ||
+        argint(2, &prot) < 0 || argint(3, &flags) < 0 ||
+        argfd(4, 0, &f) < 0 || argint(5, &offset) < 0)
+        return -1;  // 0xffff ffff ffff ffff
+
+    // bad length
+    if (length == 0 || length > VMSIZE)
+        return -1;
+
+    // check flags, prot, and file perms
+    if (!f->readable && prot & PROT_READ)
+        return -1;
+    if (!f->writable && prot & PROT_WRITE && flags & MAP_SHARED)
+        return -1;
+
+    /**
+     * v->start is 4MB aligned
+     * VMA starting point: VMASTART
+     * vm size: 4MB (VMSIZE)
+     */
+
+    // search free vm
+    p = myproc();
+    for (int i = 0; i < NVMA; ++i) {
+        if (p->vma[i].length == 0) {
+            v = &p->vma[i];
+            v->start = VMASTART + i * VMSIZE;
+            v->length = length;
+            v->prot = prot;
+            v->flags = flags;
+            v->file = f;
+            v->offset = PGROUNDDOWN(offset);    // must pg-aligned
+            filedup(f);
+            return v->start;
+        }
+    }
+
+    // no free vm
+    return -1;
 }
 
 uint64
 sys_munmap(void)
 {
-    return 0;
+    uint64 addr;
+    int length;
+
+    if (argaddr(0, &addr) < 0 || argint(1, &length) < 0)
+        return -1;
+
+    return munmap(addr, length);
 }

@@ -62,6 +62,9 @@
 //   fixed-size stack
 //   expandable heap
 //   ...
+//   vma-mmap (64*1024*1024)
+//   ...
 //   TRAPFRAME (p->trapframe, used by the trampoline)
 //   TRAMPOLINE (the same page as in the kernel)
 #define TRAPFRAME (TRAMPOLINE - PGSIZE)
+#define VMASTART (1L << 26)

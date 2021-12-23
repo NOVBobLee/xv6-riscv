@@ -17,6 +17,8 @@ struct spinlock pid_lock;
 
 extern void forkret(void);
 static void freeproc(struct proc *p);
+static void cleanvma(struct proc *);
+static void copyvma(struct proc *, struct proc *);
 
 extern char trampoline[]; // trampoline.S
 
@@ -289,6 +291,9 @@ fork(void)
   }
   np->sz = p->sz;
 
+  // copy remaining vma, half MAP_SHARED
+  copyvma(p, np);
+
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
@@ -343,6 +348,9 @@ exit(int status)
 
   if(p == initproc)
     panic("init exiting");
+
+  // munmap remaining vma
+  cleanvma(p);
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){
@@ -667,4 +675,37 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+// clean all vma and mappings
+static void
+cleanvma(struct proc *p)
+{
+    for (int i = 0; i < NVMA; ++i) {
+        struct vma *v = &p->vma[i];
+        if (v->length > 0)
+            munmap(v->start, v->length);
+    }
+}
+
+static void
+copyvma(struct proc *p, struct proc *np)
+{
+    struct vma *v, *nv;
+    // p, v: parent / np, nv: child
+    for (int i = 0; i < NVMA; ++i) {
+        v = &p->vma[i];
+        // copy vma
+        if (v->length > 0) {
+            nv = &np->vma[i];
+            nv->start = v->start;
+            nv->length = v->length;
+            nv->prot = v->prot;
+            nv->flags = v->flags;
+            nv->file = v->file;
+            nv->offset = v->offset;
+            filedup(nv->file);
+        }
+    }
+    // mappings copied by uvmcopy
 }
