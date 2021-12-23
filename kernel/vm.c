@@ -601,8 +601,7 @@ static int
 safewriteback(struct vma *v, uint64 addr, int length)
 {
     pte_t *pte;
-    int wbbyte;
-    struct inode *ip;
+    int wrbyte;
 
     // return if page is not dirty or not MAP_SHARED
     pte = walk(myproc()->pagetable, addr, 0);
@@ -610,18 +609,13 @@ safewriteback(struct vma *v, uint64 addr, int length)
         return 0;
 
     // write the modification back to disk block
-    ip = v->file->ip;
-    begin_op();
-    ilock(ip);
-    wbbyte = writei(ip, 0, PTE2PA(*pte), v->offset + addr - v->start, length);
-    iunlock(ip);
-    end_op();
+    wrbyte = filewrite(v->file, addr, length);
 
-    return wbbyte;
+    return wrbyte;
 }
 
 uint64
-munmap(uint64 addr, int length)
+munmap(uint64 addr, int rmlen)
 {
     int rmpage;
     struct proc *p;
@@ -635,48 +629,38 @@ munmap(uint64 addr, int length)
     if (!v)
         return -1;
 
-    // specify the munmap range
+    // set rm range
     if (addr == v->start) {
         // whole vma or just head
-        if (length == v->length) {
+        if (rmlen == v->length) {
             type = WHOLE;
-            rmpage = PGROUNDUP(length) / PGSIZE;
-            printf("WHOLE\n");
+            rmpage = PGROUNDUP(rmlen) / PGSIZE;
         } else {
             type = HEAD;
-            rmpage = length / PGSIZE;
-            printf("HEAD %d\n", length);
+            rmlen = PGROUNDDOWN(rmlen);
+            rmpage = rmlen / PGSIZE;
         }
-    } else if (addr + length - 1 == v->start + v->length - 1) {
+    } else if (addr + rmlen - 1 == v->start + v->length - 1) {
         type = TAIL;
-        addr = PGROUNDUP(addr);
-        rmpage = PGROUNDUP(length) / PGSIZE;
-        printf("TAIL %d\n", length);
+        uint64 newaddr = PGROUNDUP(addr);
+        rmlen -= newaddr - addr;
+        rmpage = PGROUNDUP(rmlen) / PGSIZE;
+        addr = newaddr;
     } else {
-        // in the middle of the vma
+        // in the middle of the vma or out of length
         return -1;
     }
 
     /* munmap */
-    while (rmpage > 0) {
-        // write back if the page is dirty and MAP_SHARE
-        int rmlen = (length > PGSIZE) ? PGSIZE : length;
-        safewriteback(v, addr, rmlen);
-        uvmunmap(p->pagetable, addr, 1, 1);
+    safewriteback(v, addr, rmlen);
+    uvmunmap(p->pagetable, addr, rmpage, 1);
 
-        // update vma meta data
-        if (type != TAIL) {
-            // head or whole
-            v->offset += rmlen;
-            v->start += rmlen;
-        }
-        v->length -= rmlen;
-
-        // new addr and length
-        addr += rmlen;
-        length -= rmlen;
-        --rmpage;   // remain pages
+    // set v's metadata
+    if (type == HEAD) {
+        v->start += rmlen;
+        v->offset += rmlen;
     }
+    v->length -= rmlen;
 
     // --file->ref if v->length is zero
     if (v->length == 0) {
